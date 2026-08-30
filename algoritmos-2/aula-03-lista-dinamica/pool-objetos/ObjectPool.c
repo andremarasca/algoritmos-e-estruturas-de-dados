@@ -101,8 +101,11 @@ void pool_print_free(const ObjectPool *pool)
     while (item != NULL) {
         printf("%d", item->id);
         item = item->next_free;
-        printf(item == NULL ? "\n" : " -> ");
+        if (item != NULL) {
+            printf(" -> ");
+        }
     }
+    printf("\n");
 }
 
 void pool_destroy(ObjectPool *pool)

@@ -11,7 +11,7 @@ int pool_init(ObjectPool *pool, size_t capacity)
 
     /* Reinicia o descritor antes de tentar realizar a única alocação. */
     pool->storage = NULL;
-    pool->free_head = NULL;
+    pool->free_start = NULL;
     pool->capacity = 0U;
     pool->available = 0U;
 
@@ -33,7 +33,7 @@ int pool_init(ObjectPool *pool, size_t capacity)
         }
     }
 
-    pool->free_head = &pool->storage[0];
+    pool->free_start = &pool->storage[0];
     pool->capacity = capacity;
     pool->available = capacity;
     return 1;
@@ -41,13 +41,13 @@ int pool_init(ObjectPool *pool, size_t capacity)
 
 PoolItem *pool_acquire(ObjectPool *pool)
 {
-    if (pool == NULL || pool->free_head == NULL) {
+    if (pool == NULL || pool->free_start == NULL) {
         return NULL;
     }
 
-    /* Remove a cabeça sem percorrer o armazenamento nem a lista. */
-    PoolItem *item = pool->free_head;
-    pool->free_head = item->next_free;
+    /* Removes the first free item without traversing the storage or list. */
+    PoolItem *item = pool->free_start;
+    pool->free_start = item->next_free;
     pool->available--;
 
     /* A ligação deixa de ter significado enquanto o item está adquirido. */
@@ -62,8 +62,8 @@ int pool_release(ObjectPool *pool, PoolItem *item)
     }
 
     /* Insere o item devolvido no início da lista em tempo constante. */
-    item->next_free = pool->free_head;
-    pool->free_head = item;
+    item->next_free = pool->free_start;
+    pool->free_start = item;
     pool->available++;
     return 1;
 }
@@ -91,7 +91,7 @@ void pool_print_free(const ObjectPool *pool)
     }
 
     printf("Itens livres: ");
-    const PoolItem *item = pool->free_head;
+    const PoolItem *item = pool->free_start;
 
     if (item == NULL) {
         printf("nenhum\n");
@@ -117,7 +117,7 @@ void pool_destroy(ObjectPool *pool)
     /* Um único free corresponde ao único malloc realizado por pool_init. */
     free(pool->storage);
     pool->storage = NULL;
-    pool->free_head = NULL;
+    pool->free_start = NULL;
     pool->capacity = 0U;
     pool->available = 0U;
 }

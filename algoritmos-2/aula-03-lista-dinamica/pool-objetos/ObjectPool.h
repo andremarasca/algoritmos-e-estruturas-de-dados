@@ -16,11 +16,11 @@ typedef struct pool_item {
 
 /*
  * storage possui uma única região contígua com todos os itens.
- * free_head é a única fonte de verdade sobre a disponibilidade dos itens.
+ * free_start é a única fonte de verdade sobre a disponibilidade dos itens.
  */
 typedef struct object_pool {
     PoolItem *storage;
-    PoolItem *free_head;
+    PoolItem *free_start;
     size_t capacity;
     size_t available;
 } ObjectPool;

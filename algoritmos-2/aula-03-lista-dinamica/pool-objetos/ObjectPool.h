@@ -4,19 +4,21 @@
 #include <stddef.h>
 
 /*
- * Um item do pool representa uma requisição reutilizável do firmware simulado.
- * next_free só tem significado enquanto o item pertence à lista de livres.
+ * A pool item represents a reusable request in the simulated firmware.
+ * next links acquired items in the application list.
+ * next_free links items while they belong to the free list.
  */
 typedef struct pool_item {
     int id;
     int sensor_id;
     float value;
+    struct pool_item *next;
     struct pool_item *next_free;
 } PoolItem;
 
 /*
- * storage possui uma única região contígua com todos os itens.
- * free_start é a única fonte de verdade sobre a disponibilidade dos itens.
+ * storage owns one contiguous array with every item.
+ * free_start reaches only the items currently available.
  */
 typedef struct object_pool {
     PoolItem *storage;
@@ -25,25 +27,25 @@ typedef struct object_pool {
     size_t available;
 } ObjectPool;
 
-/* Aloca uma região contígua e encadeia todos os itens como livres. */
+/* Allocates one contiguous array and links every item as available. */
 int pool_init(ObjectPool *pool, size_t capacity);
 
-/* Remove e retorna o primeiro item livre em tempo constante. */
+/* Removes and returns the first available item in constant time. */
 PoolItem *pool_acquire(ObjectPool *pool);
 
 /*
- * Devolve um item adquirido ao início da lista de livres.
- * O chamador não pode devolver o mesmo item duas vezes.
+ * Returns an acquired item to the beginning of the free list.
+ * The caller must not return the same item twice.
  */
 int pool_release(ObjectPool *pool, PoolItem *item);
 
 size_t pool_available(const ObjectPool *pool);
 size_t pool_capacity(const ObjectPool *pool);
 
-/* Imprime os identificadores ao seguir as ligações da lista de livres. */
+/* Prints identifiers by following the free-list links. */
 void pool_print_free(const ObjectPool *pool);
 
-/* Libera a única região criada por pool_init. */
+/* Releases the only array allocated by pool_init. */
 void pool_destroy(ObjectPool *pool);
 
 #endif

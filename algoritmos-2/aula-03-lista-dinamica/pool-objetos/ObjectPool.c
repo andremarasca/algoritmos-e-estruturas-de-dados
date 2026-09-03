@@ -9,7 +9,7 @@ int pool_init(ObjectPool *pool, size_t capacity)
         return 0;
     }
 
-    /* Reinicia o descritor antes de tentar realizar a única alocação. */
+    /* Resets the descriptor before attempting the only allocation. */
     pool->storage = NULL;
     pool->free_start = NULL;
     pool->capacity = 0U;
@@ -20,11 +20,12 @@ int pool_init(ObjectPool *pool, size_t capacity)
         return 0;
     }
 
-    /* Constrói a lista inicial de livres sobre a região contígua. */
+    /* Builds the initial free list over the contiguous array. */
     for (size_t index = 0U; index < capacity; index++) {
         pool->storage[index].id = (int)index;
         pool->storage[index].sensor_id = 0;
         pool->storage[index].value = 0.0f;
+        pool->storage[index].next = NULL;
 
         if (index + 1U < capacity) {
             pool->storage[index].next_free = &pool->storage[index + 1U];
@@ -50,7 +51,8 @@ PoolItem *pool_acquire(ObjectPool *pool)
     pool->free_start = item->next_free;
     pool->available--;
 
-    /* A ligação deixa de ter significado enquanto o item está adquirido. */
+    /* Clears both links before the application uses the item. */
+    item->next = NULL;
     item->next_free = NULL;
     return item;
 }
@@ -61,7 +63,8 @@ int pool_release(ObjectPool *pool, PoolItem *item)
         return 0;
     }
 
-    /* Insere o item devolvido no início da lista em tempo constante. */
+    /* Inserts the returned item at the beginning in constant time. */
+    item->next = NULL;
     item->next_free = pool->free_start;
     pool->free_start = item;
     pool->available++;
@@ -114,7 +117,7 @@ void pool_destroy(ObjectPool *pool)
         return;
     }
 
-    /* Um único free corresponde ao único malloc realizado por pool_init. */
+    /* One free matches the only malloc performed by pool_init. */
     free(pool->storage);
     pool->storage = NULL;
     pool->free_start = NULL;

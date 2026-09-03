@@ -4,11 +4,31 @@
 
 #include "ObjectPool.h"
 
+static void list_print(const PoolItem *list_start)
+{
+    printf("Lista da aplicacao: ");
+
+    if (list_start == NULL) {
+        printf("vazia\n");
+        return;
+    }
+
+    const PoolItem *item = list_start;
+    while (item != NULL) {
+        printf("%d", item->id);
+        item = item->next;
+        if (item != NULL) {
+            printf(" -> ");
+        }
+    }
+    printf("\n");
+}
+
 int main(void)
 {
     ObjectPool pool;
 
-    /* O pool reserva toda a memória antes do processamento normal. */
+    /* The pool reserves all memory before normal processing starts. */
     if (pool_init(&pool, 3U) == 0) {
         fprintf(stderr, "Nao foi possivel inicializar o pool de objetos.\n");
         return EXIT_FAILURE;
@@ -18,7 +38,7 @@ int main(void)
     assert(pool_available(&pool) == 3U);
     pool_print_free(&pool);
 
-    /* Adquire todos os itens sem realizar malloc nem percorrer a lista. */
+    /* Acquires every item without allocating or traversing the array. */
     PoolItem *request_a = pool_acquire(&pool);
     PoolItem *request_b = pool_acquire(&pool);
     PoolItem *request_c = pool_acquire(&pool);
@@ -36,34 +56,58 @@ int main(void)
     request_c->sensor_id = 103;
     request_c->value = 18.8f;
 
+    /* The application links acquired items in its own list. */
+    PoolItem *list_start = request_a;
+    request_a->next = request_b;
+    request_b->next = request_c;
+    request_c->next = NULL;
+
     printf(
         "Requisicoes adquiridas: %d, %d, %d\n",
         request_a->id,
         request_b->id,
         request_c->id
     );
+    list_print(list_start);
     pool_print_free(&pool);
 
-    /* Devolver A e depois B produz a ordem livre B -> A. */
+    /* Removes A and B from the application list before returning them. */
+    list_start = request_a->next;
+    request_a->next = NULL;
     assert(pool_release(&pool, request_a) == 1);
+
+    list_start = request_b->next;
+    request_b->next = NULL;
     assert(pool_release(&pool, request_b) == 1);
     assert(pool_available(&pool) == 2U);
+    list_print(list_start);
     pool_print_free(&pool);
 
-    /* As próximas aquisições comprovam a reutilização em ordem LIFO. */
+    /* The next acquisitions verify reuse in LIFO order. */
     PoolItem *reused_b = pool_acquire(&pool);
     PoolItem *reused_a = pool_acquire(&pool);
     assert(reused_b == request_b);
     assert(reused_a == request_a);
     assert(pool_available(&pool) == 0U);
 
-    printf("Requisicoes reutilizadas: %d, %d\n", reused_b->id, reused_a->id);
+    reused_b->next = list_start;
+    list_start = reused_b;
+    reused_a->next = list_start;
+    list_start = reused_a;
 
-    /* Devolve cada item adquirido exatamente uma vez antes da destruição. */
-    assert(pool_release(&pool, request_c) == 1);
-    assert(pool_release(&pool, reused_a) == 1);
-    assert(pool_release(&pool, reused_b) == 1);
+    printf("Requisicoes reutilizadas: %d, %d\n", reused_b->id, reused_a->id);
+    list_print(list_start);
+
+    /* Removes and returns every item before destroying the pool. */
+    while (list_start != NULL) {
+        PoolItem *removed = list_start;
+        list_start = removed->next;
+        removed->next = NULL;
+        assert(pool_release(&pool, removed) == 1);
+    }
+
     assert(pool_available(&pool) == 3U);
+    list_print(list_start);
     pool_print_free(&pool);
 
     pool_destroy(&pool);

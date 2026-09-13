@@ -86,13 +86,15 @@ static bool subset_is_compatible(const activity activities[], size_t count, uint
         // Começar em first + 1 evita comparar uma atividade consigo ou repetir um par.
         for (size_t second = first + 1U; second < count; second++) {
             const uint64_t second_bit = UINT64_C(1) << second;
-            if ((mask & second_bit) != 0U) {
+            if ((mask & second_bit) != 0U &&
+                !are_compatible(&activities[first], &activities[second])) {
                 /* INÍCIO DA LACUNA 11A
-                 * As duas atividades pertencem ao subconjunto.
-                 * Se are_compatible devolver false, devolva false para rejeitar o subconjunto.
-                 * Substitua a linha provisória abaixo pela sua verificação.
+                 * Esta condição já confirmou duas coisas:
+                 * 1. A segunda atividade também pertence ao subconjunto.
+                 * 2. As duas atividades se sobrepõem.
+                 * Escreva aqui uma linha que encerre a função e informe que o
+                 * subconjunto não é compatível.
                  */
-                (void)are_compatible(&activities[first], &activities[second]);
                 /* FIM DA LACUNA 11A */
             }
         }
@@ -162,16 +164,14 @@ static selection_status select_brute_force(const activity activities[], size_t c
 
         const size_t candidate_count = count_selected_bits(mask);
 
-        /* INÍCIO DA LACUNA 11B
-         * candidate_count é a quantidade de atividades da máscara viável atual.
-         * Se ela superar best_count, atualize best_count e best_mask juntos.
-         * Em empate, mantenha a solução anterior.
-         * As linhas com (void) apenas evitam avisos enquanto a lacuna estiver vazia.
-         * Substitua essas linhas pela sua implementação.
-         */
-        (void)candidate_count;
-        (void)best_count;
-        /* FIM DA LACUNA 11B */
+        if (candidate_count > best_count) {
+            /* INÍCIO DA LACUNA 11B
+             * Esta condição já confirmou que a solução atual possui mais
+             * atividades do que a melhor solução anterior.
+             * Atualize aqui a melhor quantidade e sua máscara correspondente.
+             */
+            /* FIM DA LACUNA 11B */
+        }
     }
 
     // Após examinar tudo, materializamos apenas o melhor subconjunto.

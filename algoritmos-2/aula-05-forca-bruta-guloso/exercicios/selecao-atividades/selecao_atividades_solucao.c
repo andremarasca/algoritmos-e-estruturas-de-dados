@@ -86,14 +86,16 @@ static bool subset_is_compatible(const activity activities[], size_t count, uint
         // Começar em first + 1 evita comparar uma atividade consigo ou repetir um par.
         for (size_t second = first + 1U; second < count; second++) {
             const uint64_t second_bit = UINT64_C(1) << second;
-            if ((mask & second_bit) != 0U) {
+            if ((mask & second_bit) != 0U &&
+                !are_compatible(&activities[first], &activities[second])) {
                 /* INÍCIO DA LACUNA 11A
-                 * Um único conflito torna todo o subconjunto inviável.
-                 * O retorno imediato evita comparar os pares restantes desnecessariamente.
+                 * Esta condição já confirmou duas coisas:
+                 * 1. A segunda atividade também pertence ao subconjunto.
+                 * 2. As duas atividades se sobrepõem.
+                 * Um único conflito torna todo o subconjunto inviável, por isso
+                 * encerramos a verificação imediatamente.
                  */
-                if (!are_compatible(&activities[first], &activities[second])) {
-                    return false;
-                }
+                return false;
                 /* FIM DA LACUNA 11A */
             }
         }
@@ -163,16 +165,17 @@ static selection_status select_brute_force(const activity activities[], size_t c
 
         const size_t candidate_count = count_selected_bits(mask);
 
-        /* INÍCIO DA LACUNA 11B
-         * A máscara já foi considerada viável. Agora comparamos a quantidade de atividades.
-         * Atualizamos a quantidade e a máscara juntas para manter a mesma solução registrada.
-         * O uso de > preserva a primeira solução encontrada quando há empate.
-         */
         if (candidate_count > best_count) {
+            /* INÍCIO DA LACUNA 11B
+             * Esta condição já confirmou que a solução atual possui mais
+             * atividades do que a melhor solução anterior.
+             * Atualizamos a quantidade e a máscara juntas para que ambas
+             * continuem descrevendo a mesma solução.
+             */
             best_count = candidate_count;
             best_mask = mask;
+            /* FIM DA LACUNA 11B */
         }
-        /* FIM DA LACUNA 11B */
     }
 
     // Após examinar tudo, materializamos apenas o melhor subconjunto.

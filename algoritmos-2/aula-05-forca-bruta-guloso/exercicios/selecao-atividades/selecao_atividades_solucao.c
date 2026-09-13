@@ -1,15 +1,17 @@
 /*
- * Brute-force and greedy solutions for the activity-selection problem.
+ * Seleção da maior quantidade de atividades sem sobreposição.
  *
- * Each activity occupies the half-open interval [start, finish). The objective is
- * to select the greatest possible number of pairwise compatible activities.
+ * Exercício 11: preencher as lacunas 11A e 11B.
+ * Exercício 12: manter o exercício 11 e preencher a lacuna 12.
+ * As demais funções já estão prontas. Os comentários explicam seu papel.
  *
- * Compilation:
- * clang -std=c17 -Wall -Wextra -Wpedantic -Wconversion -Wshadow \
- *     -Wstrict-prototypes -Werror selecao_atividades_solucao.c -o selecao_atividades
+ * Para compilar, substitua ARQUIVO.c pelo nome do arquivo usado:
+ * clang -std=c17 -Wall -Wextra -Wpedantic -Wconversion -Wshadow
+ *     -Wstrict-prototypes -Werror ARQUIVO.c -o selecao_atividades
+ * Digite o comando acima em uma única linha. Depois, execute selecao_atividades.
  *
- * Brute-force complexity: O(n^2 * 2^n).
- * Greedy complexity: O(n log n), including sorting.
+ * Cada atividade ocupa [start, finish). Início igual ao término de outra é permitido.
+ * Força bruta: O(n² 2^n). Guloso: varredura O(n), além do custo da ordenação.
  */
 
 #include <stdbool.h>
@@ -19,14 +21,18 @@
 #include <stdlib.h>
 #include <string.h>
 
+// Limite didático: a força bruta duplica os subconjuntos a cada nova atividade.
+// A máscara usa 64 bits, mas restringimos a entrada a 20 para limitar o trabalho.
 #define MAX_ACTIVITIES 20U
 
+/* Uma atividade: nome, instante de início e instante de término. */
 typedef struct {
-    const char *name;
-    int start;
-    int finish;
+    const char *name; // Texto apenas consultado, sem alocação ou liberação neste programa.
+    int start;        // Início incluído no intervalo.
+    int finish;       // Término excluído do intervalo, sempre maior que start.
 } activity;
 
+/* O retorno informa sucesso, argumento inválido, intervalo inválido ou excesso de entrada. */
 typedef enum {
     SELECTION_OK,
     SELECTION_INVALID_ARGUMENT,
@@ -34,6 +40,7 @@ typedef enum {
     SELECTION_TOO_MANY_ACTIVITIES
 } selection_status;
 
+/* Verifica os dados antes de qualquer seleção. Uma entrada vazia é válida. */
 static selection_status validate_activities(const activity activities[], size_t count) {
     if (count > MAX_ACTIVITIES) {
         return SELECTION_TOO_MANY_ACTIVITIES;
@@ -54,23 +61,40 @@ static selection_status validate_activities(const activity activities[], size_t 
     return SELECTION_OK;
 }
 
-/* Two half-open intervals are compatible when one finishes before the other starts. */
+/* Compatibilidade do exercício 5: uma termina antes ou no início da outra.
+ * O teste funciona mesmo quando as atividades chegam fora de ordem cronológica. */
 static bool are_compatible(const activity *first, const activity *second) {
     return first->finish <= second->start || second->finish <= first->start;
 }
 
+/*
+ * Verifica se o subconjunto representado por mask possui algum conflito.
+ * O bit de índice 0 representa activities[0], o de índice 1 representa activities[1].
+ * Exemplo: 0101 seleciona as posições 0 e 2, contando da direita para a esquerda.
+ * uint64_t é um inteiro sem sinal de 64 bits. UINT64_C(1) é o valor 1 desse tipo.
+ * A expressão 1 << índice desloca o bit 1 até a posição da atividade.
+ * mask & bit isola essa posição: zero significa ausente, diferente de zero significa presente.
+ */
 static bool subset_is_compatible(const activity activities[], size_t count, uint64_t mask) {
     for (size_t first = 0U; first < count; first++) {
         const uint64_t first_bit = UINT64_C(1) << first;
+        // Uma atividade ausente do subconjunto não precisa participar das comparações.
         if ((mask & first_bit) == 0U) {
             continue;
         }
 
+        // Começar em first + 1 evita comparar uma atividade consigo ou repetir um par.
         for (size_t second = first + 1U; second < count; second++) {
             const uint64_t second_bit = UINT64_C(1) << second;
-            if ((mask & second_bit) != 0U &&
-                !are_compatible(&activities[first], &activities[second])) {
-                return false;
+            if ((mask & second_bit) != 0U) {
+                /* INÍCIO DA LACUNA 11A
+                 * Um único conflito torna todo o subconjunto inviável.
+                 * O retorno imediato evita comparar os pares restantes desnecessariamente.
+                 */
+                if (!are_compatible(&activities[first], &activities[second])) {
+                    return false;
+                }
+                /* FIM DA LACUNA 11A */
             }
         }
     }
@@ -78,10 +102,12 @@ static bool subset_is_compatible(const activity activities[], size_t count, uint
     return true;
 }
 
+/* Conta quantas atividades estão presentes, sem alterar a máscara recebida pelo chamador. */
 static size_t count_selected_bits(uint64_t mask) {
     size_t count = 0U;
 
     while (mask != 0U) {
+        // O bit da direita vale 0 ou 1. Após somar, deslocamos a máscara para ler o próximo.
         count += (size_t)(mask & UINT64_C(1));
         mask >>= 1U;
     }
@@ -89,6 +115,7 @@ static size_t count_selected_bits(uint64_t mask) {
     return count;
 }
 
+/* Converte a melhor máscara em um vetor de atividades, preservando a ordem da entrada. */
 static size_t copy_subset(const activity activities[], size_t count, uint64_t mask,
                           activity selected[]) {
     size_t selected_count = 0U;
@@ -104,7 +131,13 @@ static size_t copy_subset(const activity activities[], size_t count, uint64_t ma
     return selected_count;
 }
 
-/* The output array must have room for count activities. */
+/*
+ * Busca completa: verifica os subconjuntos e guarda o maior que não possui conflitos.
+ * activities/count: vetor de entrada e quantidade de atividades.
+ * selected: vetor de saída com espaço para count atividades, fornecido pelo chamador.
+ * selected_count: endereço onde gravamos a quantidade escolhida.
+ * Não altera a entrada nem aloca memória. Os nomes continuam pertencendo à entrada.
+ */
 static selection_status select_brute_force(const activity activities[], size_t count,
                                            activity selected[], size_t *selected_count) {
     if (selected_count == NULL || (count > 0U && selected == NULL)) {
@@ -117,26 +150,42 @@ static selection_status select_brute_force(const activity activities[], size_t c
         return status;
     }
 
+    // Deslocar 1 por count posições produz 2^count, a quantidade de subconjuntos.
     const uint64_t subset_count = UINT64_C(1) << count;
-    size_t best_count = 0U;
-    uint64_t best_mask = 0U;
+    size_t best_count = 0U;  // Quantidade da melhor solução já encontrada.
+    uint64_t best_mask = 0U; // Subconjunto dessa solução, inicialmente vazio.
 
+    // A enumeração já está pronta: inclui o vazio e termina no subconjunto com todos os bits 1.
     for (uint64_t mask = 0U; mask < subset_count; mask++) {
         if (!subset_is_compatible(activities, count, mask)) {
             continue;
         }
 
         const size_t candidate_count = count_selected_bits(mask);
+
+        /* INÍCIO DA LACUNA 11B
+         * A máscara já foi considerada viável. Agora comparamos a quantidade de atividades.
+         * Atualizamos a quantidade e a máscara juntas para manter a mesma solução registrada.
+         * O uso de > preserva a primeira solução encontrada quando há empate.
+         */
         if (candidate_count > best_count) {
             best_count = candidate_count;
             best_mask = mask;
         }
+        /* FIM DA LACUNA 11B */
     }
 
+    // Após examinar tudo, materializamos apenas o melhor subconjunto.
     *selected_count = copy_subset(activities, count, best_mask, selected);
     return SELECTION_OK;
 }
 
+/*
+ * Critério usado por qsort: retorno negativo coloca a primeira atividade antes da segunda.
+ * Primeiro comparamos o término. Se empatar, o menor início vem primeiro.
+ * Exemplo: [0, 7) vem antes de [5, 7). Se início e término empatarem, usamos o nome.
+ * O desempate só torna a ordem previsível. O critério principal continua sendo o término.
+ */
 static int compare_by_finish(const void *left, const void *right) {
     const activity *first = left;
     const activity *second = right;
@@ -150,7 +199,11 @@ static int compare_by_finish(const void *left, const void *right) {
     return strcmp(first->name, second->name);
 }
 
-/* The output array must have room for count activities. */
+/*
+ * Exercício 12: seleção gulosa. Recebe os mesmos parâmetros da força bruta.
+ * selected deve ter espaço para count atividades, e selected_count recebe a quantidade.
+ * A validação e a ordenação estão prontas. Falta decidir quais atividades aceitar.
+ */
 static selection_status select_greedy(const activity activities[], size_t count,
                                       activity selected[], size_t *selected_count) {
     if (selected_count == NULL || (count > 0U && selected == NULL)) {
@@ -163,27 +216,39 @@ static selection_status select_greedy(const activity activities[], size_t count,
         return status;
     }
 
+    // Ordenamos uma cópia para preservar os dados usados pela força bruta.
     activity sorted[MAX_ACTIVITIES];
     for (size_t index = 0U; index < count; index++) {
         sorted[index] = activities[index];
     }
     qsort(sorted, count, sizeof(sorted[0]), compare_by_finish);
 
+    /* INÍCIO DA LACUNA 12
+     * Antes da primeira aceitação, last_finish ainda não representa uma atividade.
+     * has_selection evita usar esse valor inicial como restrição, inclusive com horários negativos.
+     */
     bool has_selection = false;
     int last_finish = 0;
 
     for (size_t index = 0U; index < count; index++) {
+        // A primeira atividade cabe. As demais precisam começar após a última aceita ou no término.
         if (!has_selection || sorted[index].start >= last_finish) {
+            // A quantidade atual indica a próxima posição livre do vetor de saída.
             selected[*selected_count] = sorted[index];
             (*selected_count)++;
+
+            // A arena fica ocupada até o término desta nova atividade aceita.
             last_finish = sorted[index].finish;
             has_selection = true;
         }
+        // Na rejeição, não atualizamos nada: a última atividade aceita continua sendo a referência.
     }
-
+    /* FIM DA LACUNA 12 */
     return SELECTION_OK;
 }
 
+/* Confere os pares da resposta produzida. Ter a quantidade correta não basta: ela deve ser viável.
+ */
 static bool selection_is_compatible(const activity selected[], size_t count) {
     for (size_t first = 0U; first < count; first++) {
         for (size_t second = first + 1U; second < count; second++) {
@@ -196,6 +261,7 @@ static bool selection_is_compatible(const activity selected[], size_t count) {
     return true;
 }
 
+/* Mostra a estratégia, a quantidade escolhida e os nomes na ordem do vetor de saída. */
 static void print_selection(const char *label, const activity selected[], size_t count) {
     printf("%s (%zu):", label, count);
     for (size_t index = 0U; index < count; index++) {
@@ -204,6 +270,7 @@ static void print_selection(const char *label, const activity selected[], size_t
     putchar('\n');
 }
 
+/* Teste já pronto: executa as duas estratégias e confere quantidade e ausência de conflitos. */
 static bool run_valid_test(const char *name, const activity activities[], size_t count,
                            size_t expected_count) {
     activity brute_selected[MAX_ACTIVITIES];
@@ -222,13 +289,14 @@ static bool run_valid_test(const char *name, const activity activities[], size_t
                         selection_is_compatible(greedy_selected, greedy_count);
 
     if (!passed) {
-        fprintf(stderr, "Test failed: %s\n", name);
+        fprintf(stderr, "Teste falhou: %s\n", name);
     }
     return passed;
 }
 
+/* Início igual ao término não forma uma atividade válida. Ambas as estratégias devem rejeitar. */
 static bool run_invalid_interval_test(void) {
-    const activity invalid[] = {{"Invalid", 4, 4}};
+    const activity invalid[] = {{"Inválida", 4, 4}};
     activity selected[MAX_ACTIVITIES];
     size_t selected_count = 0U;
 
@@ -239,11 +307,12 @@ static bool run_invalid_interval_test(void) {
         brute_status == SELECTION_INVALID_INTERVAL && greedy_status == SELECTION_INVALID_INTERVAL;
 
     if (!passed) {
-        fputs("Test failed: invalid interval\n", stderr);
+        fputs("Teste falhou: intervalo inválido\n", stderr);
     }
     return passed;
 }
 
+/* Uma entrada com 21 atividades deve ser rejeitada antes de enumerar ou copiar seus dados. */
 static bool run_activity_limit_test(void) {
     activity too_many[MAX_ACTIVITIES + 1U];
     activity selected[MAX_ACTIVITIES];
@@ -261,12 +330,18 @@ static bool run_activity_limit_test(void) {
                         greedy_status == SELECTION_TOO_MANY_ACTIVITIES;
 
     if (!passed) {
-        fputs("Test failed: activity limit\n", stderr);
+        fputs("Teste falhou: limite de atividades\n", stderr);
     }
     return passed;
 }
 
+/*
+ * Demonstração e testes já prontos. Não é necessário alterar esta função.
+ * Após o exercício 11, confira a linha Força bruta. O guloso ainda estará incompleto.
+ * Após o exercício 12, as duas linhas e os sete testes devem estar corretos.
+ */
 int main(void) {
+    // Mesma entrada do exercício 7, propositalmente fora da ordem de término.
     const activity schedule[] = {{"K", 5, 9}, {"L", 1, 3}, {"M", 3, 5},
                                  {"N", 0, 7}, {"O", 5, 7}, {"P", 8, 10}};
     const size_t schedule_count = sizeof(schedule) / sizeof(schedule[0]);
@@ -280,27 +355,29 @@ int main(void) {
     const selection_status greedy_status =
         select_greedy(schedule, schedule_count, greedy_selected, &greedy_count);
     if (brute_status != SELECTION_OK || greedy_status != SELECTION_OK) {
-        fputs("Could not process the demonstration.\n", stderr);
+        fputs("Não foi possível processar a demonstração.\n", stderr);
         return EXIT_FAILURE;
     }
 
-    print_selection("Brute force", brute_selected, brute_count);
-    print_selection("Greedy", greedy_selected, greedy_count);
+    print_selection("Força bruta", brute_selected, brute_count);
+    print_selection("Guloso", greedy_selected, greedy_count);
 
-    const activity single[] = {{"Only", 2, 5}};
+    // Casos pequenos e independentes: uma atividade, limites encostados e sobreposição total.
+    const activity single[] = {{"Única", 2, 5}};
     const activity touching[] = {{"T1", 0, 2}, {"T2", 2, 4}, {"T3", 4, 6}};
     const activity overlapping[] = {{"X1", 0, 5}, {"X2", 1, 4}, {"X3", 2, 3}};
 
+    // Cada função devolve true quando o teste passa. Somamos 1 por teste aprovado.
     size_t passed_count = 0U;
     passed_count += run_valid_test("normal", schedule, schedule_count, 4U) ? 1U : 0U;
-    passed_count += run_valid_test("empty", NULL, 0U, 0U) ? 1U : 0U;
-    passed_count += run_valid_test("single", single, 1U, 1U) ? 1U : 0U;
-    passed_count += run_valid_test("touching", touching, 3U, 3U) ? 1U : 0U;
-    passed_count += run_valid_test("overlapping", overlapping, 3U, 1U) ? 1U : 0U;
+    passed_count += run_valid_test("vazio", NULL, 0U, 0U) ? 1U : 0U;
+    passed_count += run_valid_test("uma atividade", single, 1U, 1U) ? 1U : 0U;
+    passed_count += run_valid_test("limites encostados", touching, 3U, 3U) ? 1U : 0U;
+    passed_count += run_valid_test("sobreposição total", overlapping, 3U, 1U) ? 1U : 0U;
     passed_count += run_activity_limit_test() ? 1U : 0U;
     passed_count += run_invalid_interval_test() ? 1U : 0U;
 
     const size_t test_count = 7U;
-    printf("Tests: %zu/%zu passed\n", passed_count, test_count);
+    printf("Testes: %zu/%zu aprovados\n", passed_count, test_count);
     return passed_count == test_count ? EXIT_SUCCESS : EXIT_FAILURE;
 }

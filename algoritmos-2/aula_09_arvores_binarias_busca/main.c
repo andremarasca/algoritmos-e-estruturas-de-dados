@@ -29,13 +29,13 @@ static int insere_sequencia(ArvBin* raiz, const int valores[], int quantidade) {
 /* Compara os três percursos e apresenta as medidas da árvore atual. */
 static void mostra_ArvBin(ArvBin* raiz) {
     printf("Nós: %d | Altura em níveis: %d | Balanceada: %d\n",
-           totalNO_ArvBin(raiz), altura_ArvBin(raiz), balanceada_ArvBin(raiz));
+           contar_nos(*raiz), calcular_altura(*raiz), balanceada_ArvBin(raiz));
     puts("Pré-Ordem:");
-    preOrdem_ArvBin(raiz);
+    preOrdem_NO(*raiz);
     puts("Em-Ordem:");
-    emOrdem_ArvBin(raiz);
+    exibir_em_ordem(*raiz);
     puts("Pós-Ordem:");
-    posOrdem_ArvBin(raiz);
+    exibir_pos_ordem(*raiz);
 }
 
 /* Reproduz inserção, buscas e os três casos independentes de remoção dos slides. */

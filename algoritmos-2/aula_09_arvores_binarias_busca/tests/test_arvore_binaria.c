@@ -129,25 +129,25 @@ static int check_subtree(struct NO* node, int64_t lower, int64_t upper, int budg
 static void check_tree(ArvBin* tree, int count) {
     CHECK(tree != NULL);
     CHECK(check_subtree(*tree, INT64_MIN, INT64_MAX, count + 1) == count);
-    CHECK(totalNO_ArvBin(tree) == count);
+    CHECK(contar_nos(*tree) == count);
     CHECK(live_blocks == (size_t)count + 1U);
 }
 
-/* Todas as consultas públicas aceitam uma caixa inexistente sem acessar memória. */
+/* Operações com caixa e consultas por nó aceitam seus respectivos ponteiros nulos. */
 static void test_null_handle(void) {
     int distance = 7;
     CHECK(insere_ArvBin(NULL, 1) == 0);
     CHECK(busca_ArvBin(NULL, 1) == NULL);
     CHECK(remove_ArvBin(NULL, 1) == 0);
-    CHECK(totalNO_ArvBin(NULL) == 0);
-    CHECK(altura_ArvBin(NULL) == 0);
+    CHECK(contar_nos(NULL) == 0);
+    CHECK(calcular_altura(NULL) == 0);
     CHECK(balanceada_ArvBin(NULL) == 0);
     CHECK(rebalanceia_ArvBin(NULL) == 0);
     CHECK(consulta_deslocamentos_ArvBin(NULL, 1, &distance) == 0);
     CHECK(distance == 7);
-    preOrdem_ArvBin(NULL);
-    emOrdem_ArvBin(NULL);
-    posOrdem_ArvBin(NULL);
+    preOrdem_NO(NULL);
+    exibir_em_ordem(NULL);
+    exibir_pos_ordem(NULL);
     CHECK(output_length == 0);
     libera_ArvBin(NULL);
 }
@@ -164,13 +164,13 @@ static void test_empty_tree(void) {
     ArvBin* tree = cria_ArvBin();
     check_tree(tree, 0);
     CHECK(*tree == NULL);
-    CHECK(altura_ArvBin(tree) == 0);
+    CHECK(calcular_altura(*tree) == 0);
     CHECK(balanceada_ArvBin(tree) == 1);
     CHECK(busca_ArvBin(tree, 9) == NULL);
     CHECK(remove_ArvBin(tree, 9) == 0);
-    preOrdem_ArvBin(tree);
-    emOrdem_ArvBin(tree);
-    posOrdem_ArvBin(tree);
+    preOrdem_NO(*tree);
+    exibir_em_ordem(*tree);
+    exibir_pos_ordem(*tree);
     CHECK(output_length == 0);
     fail_after = 0;
     CHECK(rebalanceia_ArvBin(tree) == 1);
@@ -184,8 +184,16 @@ static void test_single_zero_key(void) {
     ArvBin* tree = create_tree(values, 1);
     CHECK(busca_ArvBin(tree, 0) == *tree);
     CHECK((*tree)->esq == NULL && (*tree)->dir == NULL);
-    CHECK(altura_ArvBin(tree) == 1);
+    CHECK(calcular_altura(*tree) == 1);
     CHECK(balanceada_ArvBin(tree) == 1);
+    preOrdem_NO(*tree);
+    CHECK(strcmp(output, "0\n") == 0);
+    reset_output();
+    exibir_em_ordem(*tree);
+    CHECK(strcmp(output, "0\n") == 0);
+    reset_output();
+    exibir_pos_ordem(*tree);
+    CHECK(strcmp(output, "0\n") == 0);
     check_tree(tree, 1);
     libera_ArvBin(tree);
 }
@@ -251,26 +259,81 @@ static void test_integer_limits(void) {
 static void test_traversals(void) {
     const int values[] = {36, 16, 58, 28, 44, 72};
     ArvBin* tree = create_tree(values, 6);
-    preOrdem_ArvBin(tree);
+    preOrdem_NO(*tree);
     CHECK(strcmp(output, "36\n16\n28\n58\n44\n72\n") == 0);
     reset_output();
-    emOrdem_ArvBin(tree);
+    exibir_em_ordem(*tree);
     CHECK(strcmp(output, "16\n28\n36\n44\n58\n72\n") == 0);
     reset_output();
-    posOrdem_ArvBin(tree);
+    exibir_pos_ordem(*tree);
     CHECK(strcmp(output, "28\n16\n44\n72\n58\n36\n") == 0);
     check_tree(tree, 6);
     libera_ArvBin(tree);
+}
+
+/* Os percursos começam em um nó interno, sem caixa de raiz nem alocação auxiliar. */
+static void testar_percursos_por_no_sem_caixa(void) {
+    struct NO no_1 = {1, NULL, NULL};
+    struct NO no_4 = {4, NULL, NULL};
+    struct NO no_6 = {6, NULL, NULL};
+    struct NO no_9 = {9, NULL, NULL};
+    struct NO no_15 = {15, NULL, NULL};
+    struct NO no_5 = {5, &no_4, &no_6};
+    struct NO no_3 = {3, &no_1, &no_5};
+    struct NO no_12 = {12, &no_9, &no_15};
+    struct NO no_7 = {7, &no_3, &no_12};
+    struct NO no_29 = {29, NULL, NULL};
+    struct NO no_18 = {18, &no_7, &no_29};
+    struct NO* nos[] = {&no_1, &no_4, &no_6, &no_9, &no_15, &no_5,
+                       &no_3, &no_12, &no_7, &no_29, &no_18};
+    const struct NO originais[] = {no_1, no_4, no_6, no_9, no_15, no_5,
+                                  no_3, no_12, no_7, no_29, no_18};
+
+    preOrdem_NO(&no_7);
+    CHECK(strcmp(output, "7\n3\n1\n5\n4\n6\n12\n9\n15\n") == 0);
+    reset_output();
+    exibir_em_ordem(&no_7);
+    CHECK(strcmp(output, "1\n3\n4\n5\n6\n7\n9\n12\n15\n") == 0);
+    reset_output();
+    exibir_pos_ordem(&no_7);
+    CHECK(strcmp(output, "1\n4\n6\n5\n3\n9\n15\n12\n7\n") == 0);
+
+    /* A exibição deve preservar as chaves e todas as referências da árvore. */
+    for (int indice = 0; indice < 11; indice++) {
+        CHECK(nos[indice]->info == originais[indice].info);
+        CHECK(nos[indice]->esq == originais[indice].esq);
+        CHECK(nos[indice]->dir == originais[indice].dir);
+    }
+    CHECK(live_blocks == 0);
 }
 
 /* Quantidade e altura precisam combinar subárvores de maneiras diferentes. */
 static void test_count_and_height(void) {
     const int values[] = {24, 12, 42, 17, 15};
     ArvBin* tree = create_tree(values, 5);
-    CHECK(totalNO_ArvBin(tree) == 5);
-    CHECK(altura_ArvBin(tree) == 4);
+    CHECK(contar_nos(*tree) == 5);
+    CHECK(calcular_altura(*tree) == 4);
     CHECK(balanceada_ArvBin(tree) == 0);
     libera_ArvBin(tree);
+}
+
+/* Contagem e altura aceitam qualquer nó, mesmo sem uma caixa de raiz alocada. */
+static void testar_consultas_por_no_sem_caixa(void) {
+    struct NO folha = {1, NULL, NULL};
+    struct NO intermediario = {3, &folha, NULL};
+    struct NO interno = {7, &intermediario, NULL};
+    struct NO irmao = {29, NULL, NULL};
+    struct NO raiz = {18, &interno, &irmao};
+
+    CHECK(contar_nos(NULL) == 0 && calcular_altura(NULL) == 0);
+    CHECK(contar_nos(&folha) == 1 && calcular_altura(&folha) == 1);
+    CHECK(contar_nos(&interno) == 3 && calcular_altura(&interno) == 3);
+    CHECK(contar_nos(&raiz) == 5 && calcular_altura(&raiz) == 4);
+    CHECK(raiz.esq == &interno && raiz.dir == &irmao);
+    CHECK(interno.esq == &intermediario && interno.dir == NULL);
+    CHECK(intermediario.esq == &folha && intermediario.dir == NULL);
+    CHECK(folha.info == 1 && folha.esq == NULL && folha.dir == NULL);
+    CHECK(live_blocks == 0);
 }
 
 /* A remoção do único nó mantém a caixa disponível para novas inserções. */
@@ -372,7 +435,7 @@ static void test_remove_absent(void) {
 static void test_descendant_imbalance(void) {
     const int values[] = {40, 20, 60, 10, 5, 70, 80};
     ArvBin* tree = create_tree(values, 7);
-    CHECK(altura_ArvBin(&((*tree)->esq)) == altura_ArvBin(&((*tree)->dir)));
+    CHECK(calcular_altura((*tree)->esq) == calcular_altura((*tree)->dir));
     CHECK(balanceada_ArvBin(tree) == 0);
     CHECK(rebalanceia_ArvBin(tree) == 1);
     CHECK(balanceada_ArvBin(tree) == 1);
@@ -385,14 +448,14 @@ static void test_rebalance_even(void) {
     const int values[] = {2, 3, 4, 6, 5, 7};
     ArvBin* tree = create_tree(values, 6);
     ArvBin* handle = tree;
-    CHECK(altura_ArvBin(tree) == 5);
+    CHECK(calcular_altura(*tree) == 5);
     CHECK(rebalanceia_ArvBin(tree) == 1);
     CHECK(tree == handle);
     CHECK((*tree)->info == 4);
     CHECK((*tree)->esq->info == 2 && (*tree)->esq->dir->info == 3);
     CHECK((*tree)->dir->info == 6);
     CHECK((*tree)->dir->esq->info == 5 && (*tree)->dir->dir->info == 7);
-    CHECK(altura_ArvBin(tree) == 3 && balanceada_ArvBin(tree) == 1);
+    CHECK(calcular_altura(*tree) == 3 && balanceada_ArvBin(tree) == 1);
     check_tree(tree, 6);
     libera_ArvBin(tree);
 }
@@ -407,7 +470,7 @@ static void test_rebalance_sizes(void) {
         for (int value = 1; value <= count; value++) {
             CHECK(insere_ArvBin(tree, value) == 1);
         }
-        CHECK(altura_ArvBin(tree) == count);
+        CHECK(calcular_altura(*tree) == count);
         CHECK(rebalanceia_ArvBin(tree) == 1);
         CHECK(rebalanceia_ArvBin(tree) == 1);
         int minimum_height = 0;
@@ -417,7 +480,7 @@ static void test_rebalance_sizes(void) {
             capacity = 2 * capacity + 1;
             minimum_height++;
         }
-        CHECK(altura_ArvBin(tree) == minimum_height);
+        CHECK(calcular_altura(*tree) == minimum_height);
         CHECK(balanceada_ArvBin(tree) == 1);
         /* A reconstrução deve preservar todas as chaves inseridas, sem criar outras. */
         for (int value = 1; value <= count; value++) {
@@ -441,7 +504,7 @@ static void test_rebalance_allocation_failures(void) {
         CHECK(rebalanceia_ArvBin(tree) == 0);
         fail_after = -1;
         CHECK(*tree == root && busca_ArvBin(tree, 7) == last);
-        CHECK(altura_ArvBin(tree) == 5);
+        CHECK(calcular_altura(*tree) == 5);
         check_tree(tree, 6);
         libera_ArvBin(tree);
         CHECK(live_blocks == 0);
@@ -452,8 +515,8 @@ static void test_rebalance_allocation_failures(void) {
 static void test_slide_insertion(void) {
     const int values[] = {4, 14, 8, 3, 15, 16, 2, 23, 42};
     ArvBin* tree = create_tree(values, 9);
-    CHECK(altura_ArvBin(tree) == 6);
-    emOrdem_ArvBin(tree);
+    CHECK(calcular_altura(*tree) == 6);
+    exibir_em_ordem(*tree);
     CHECK(strcmp(output, "2\n3\n4\n8\n14\n15\n16\n23\n42\n") == 0);
     check_tree(tree, 9);
     libera_ArvBin(tree);
@@ -473,7 +536,7 @@ static void test_search_distances(void) {
     tree = create_tree(ascending, 11);
     CHECK(consulta_deslocamentos_ArvBin(tree, 11, &distance) == 1 && distance == 10);
     CHECK(rebalanceia_ArvBin(tree) == 1);
-    CHECK(altura_ArvBin(tree) == 4);
+    CHECK(calcular_altura(*tree) == 4);
     check_tree(tree, 11);
     libera_ArvBin(tree);
 }
@@ -532,7 +595,9 @@ int main(void) {
     run_test(test_search, "busca presente e ausente");
     run_test(test_integer_limits, "limites de int");
     run_test(test_traversals, "três percursos");
+    run_test(testar_percursos_por_no_sem_caixa, "percursos por nó interno sem caixa de raiz");
     run_test(test_count_and_height, "contagem e altura");
+    run_test(testar_consultas_por_no_sem_caixa, "consultas por nó sem caixa de raiz");
     run_test(test_remove_single_root, "remoção da única raiz");
     run_test(test_remove_leaves, "remoção de folhas dos dois lados");
     run_test(test_remove_root_with_right_child, "raiz com filho direito");

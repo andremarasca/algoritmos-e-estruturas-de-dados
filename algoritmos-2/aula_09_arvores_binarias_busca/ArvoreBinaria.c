@@ -1,9 +1,10 @@
 /*
- * Trechos do PDF: representação (6), criação (7), destruição (8), Pré-Ordem (9),
+ * Trechos do PDF: representação (6), criação (7), destruição (8),
  * inserção (13 e 22), busca (96), remoção (132) e substituição (156).
  * Esses blocos preservam as instruções, os nomes e os comentários originais.
  * As explicações ficam antes dos blocos para não alterar o código apresentado.
  * Os complementos após remove_atual implementam as partes não fornecidas em C.
+ * Os três percursos recebem um nó diretamente, conforme a aula prática.
  */
 #include <stdio.h>
 #include <stdlib.h>
@@ -65,19 +66,14 @@ void libera_ArvBin(ArvBin* raiz){
     free(raiz);//libera a raiz
 }
 
-/*
- * PDF, slide 9: as decisões separam caixa inexistente e posição vazia.
- * printf registra a chave antes das duas chamadas. -> acessa um campo pelo ponteiro.
- * & obtém o endereço de um campo para que ele seja tratado como raiz de subárvore.
- */
-void preOrdem_ArvBin(ArvBin *raiz){
-    if(raiz == NULL)
+/* Adaptação do slide 9: exibe em Pré-Ordem a subárvore que começa em no. */
+void preOrdem_NO(struct NO* no){
+    /* Encerra o ramo vazio para evitar acesso a um nó inexistente. */
+    if(no == NULL)
         return;
-    if(*raiz != NULL){
-        printf("%d\n",(*raiz)->info);
-        preOrdem_ArvBin(&((*raiz)->esq));
-        preOrdem_ArvBin(&((*raiz)->dir));
-    }
+    printf("%d\n", no->info);
+    preOrdem_NO(no->esq);
+    preOrdem_NO(no->dir);
 }
 
 /*
@@ -205,15 +201,15 @@ struct NO* remove_atual(struct NO* atual){
 }
 
 /* Complemento do slide 228: soma as subárvores e inclui o nó atual. */
-int totalNO_ArvBin(ArvBin* raiz) {
-    /* A ausência da caixa ou do nó não contribui para a contagem. */
-    if (raiz == NULL || *raiz == NULL) {
+int contar_nos(struct NO* no) {
+    /* Uma subárvore vazia não contribui para a contagem. */
+    if (no == NULL) {
         return 0;
     }
 
-    int total_esq = totalNO_ArvBin(&((*raiz)->esq));
-    int total_dir = totalNO_ArvBin(&((*raiz)->dir));
-    return 1 + total_esq + total_dir;
+    int total_esquerda = contar_nos(no->esq);
+    int total_direita = contar_nos(no->dir);
+    return 1 + total_esquerda + total_direita;
 }
 
 /* Complemento do slide 126: conta descidas por arestas, sem contar a visita inicial. */
@@ -247,44 +243,44 @@ int consulta_deslocamentos_ArvBin(ArvBin* raiz, int valor, int* deslocamentos) {
 }
 
 /* Complemento do slide 228: conta os níveis do caminho mais longo até uma folha. */
-int altura_ArvBin(ArvBin* raiz) {
+int calcular_altura(struct NO* no) {
     /* O retorno zero permite que uma folha tenha altura um. */
-    if (raiz == NULL || *raiz == NULL) {
+    if (no == NULL) {
         return 0;
     }
 
-    int altura_esq = altura_ArvBin(&((*raiz)->esq));
-    int altura_dir = altura_ArvBin(&((*raiz)->dir));
+    int altura_esquerda = calcular_altura(no->esq);
+    int altura_direita = calcular_altura(no->dir);
 
     /* Apenas o maior caminho determina a altura, sem somar caminhos distintos. */
-    if (altura_esq > altura_dir) {
-        return 1 + altura_esq;
+    if (altura_esquerda > altura_direita) {
+        return 1 + altura_esquerda;
     }
-    return 1 + altura_dir;
+    return 1 + altura_direita;
 }
 
-/* Complemento do slide 228: visita a raiz entre os valores menores e os maiores. */
-void emOrdem_ArvBin(ArvBin* raiz) {
+/* Complemento do slide 228: exibe em Em-Ordem a subárvore que começa em no. */
+void exibir_em_ordem(struct NO* no) {
     /* A parada evita imprimir ou acessar uma posição vazia. */
-    if (raiz == NULL || *raiz == NULL) {
+    if (no == NULL) {
         return;
     }
 
-    emOrdem_ArvBin(&((*raiz)->esq));
-    printf("%d\n", (*raiz)->info);
-    emOrdem_ArvBin(&((*raiz)->dir));
+    exibir_em_ordem(no->esq);
+    printf("%d\n", no->info);
+    exibir_em_ordem(no->dir);
 }
 
-/* Complemento do slide 228: conclui as duas subárvores antes de imprimir o pai. */
-void posOrdem_ArvBin(ArvBin* raiz) {
+/* Complemento do slide 228: exibe em Pós-Ordem a subárvore que começa em no. */
+void exibir_pos_ordem(struct NO* no) {
     /* A parada encerra os ramos que não possuem nó. */
-    if (raiz == NULL || *raiz == NULL) {
+    if (no == NULL) {
         return;
     }
 
-    posOrdem_ArvBin(&((*raiz)->esq));
-    posOrdem_ArvBin(&((*raiz)->dir));
-    printf("%d\n", (*raiz)->info);
+    exibir_pos_ordem(no->esq);
+    exibir_pos_ordem(no->dir);
+    printf("%d\n", no->info);
 }
 
 /* Calcula alturas enquanto verifica o critério local do slide 230 em todos os nós. */
@@ -330,7 +326,7 @@ int balanceada_ArvBin(ArvBin* raiz) {
     return verifica_balanceamento_NO(*raiz, &altura);
 }
 
-/* Salva as chaves em um vetor previamente dimensionado com totalNO_ArvBin. */
+/* Salva as chaves em um vetor previamente dimensionado com contar_nos. */
 static void salva_emOrdem_NO(struct NO* no, int vetor[], int* indice) {
     /* Posições vazias não ocupam entradas no vetor ordenado. */
     if (no == NULL) {
@@ -372,7 +368,7 @@ int rebalanceia_ArvBin(ArvBin* raiz) {
         return 0;
     }
 
-    int total = totalNO_ArvBin(raiz);
+    int total = contar_nos(*raiz);
 
     /* A árvore vazia já atende ao objetivo e não exige alocações. */
     if (total == 0) {

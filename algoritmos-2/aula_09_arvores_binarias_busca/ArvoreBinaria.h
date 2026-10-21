@@ -3,7 +3,8 @@
 
 /*
  * Aula 09: árvores binárias de busca.
- * A representação e os nomes do PDF são preservados.
+ * A representação e as operações originais do PDF são preservadas.
+ * Percursos e consultas simples recebem um nó diretamente, como na aula prática.
  * ArvBin referencia um nó. ArvBin* referencia a caixa que guarda a raiz.
  * Os campos do nó ficam na implementação, como no slide 6.
  */
@@ -15,8 +16,8 @@ ArvBin* cria_ArvBin(void);
 /* Libera todos os nós e a caixa. O chamador deve depois atribuir NULL à sua variável. */
 void libera_ArvBin(ArvBin* raiz);
 
-/* Imprime uma chave por linha, antes de percorrer as subárvores. */
-void preOrdem_ArvBin(ArvBin *raiz);
+/* Exibe a subárvore em Pré-Ordem, uma chave por linha. Aceita no igual a NULL. */
+void preOrdem_NO(struct NO* no);
 
 /* Insere uma chave única. Retorna 1 ao inserir e 0 para duplicata, falha ou raiz inválida. */
 int insere_ArvBin(ArvBin* raiz, int valor);
@@ -37,15 +38,17 @@ int consulta_deslocamentos_ArvBin(ArvBin* raiz, int valor, int* deslocamentos);
  */
 int remove_ArvBin(ArvBin *raiz, int valor);
 
-/* Complementos do slide 228: vazio tem zero nós e altura zero; folha tem altura um. */
-int totalNO_ArvBin(ArvBin* raiz);
-int altura_ArvBin(ArvBin* raiz);
+/* Conta os nós da subárvore iniciada em no. Retorna zero quando no é NULL. */
+int contar_nos(struct NO* no);
 
-/* Imprime as chaves em ordem crescente, uma por linha. */
-void emOrdem_ArvBin(ArvBin* raiz);
+/* Calcula a altura em níveis da subárvore: NULL tem altura zero e folha tem altura um. */
+int calcular_altura(struct NO* no);
 
-/* Imprime os filhos antes do pai, uma chave por linha. */
-void posOrdem_ArvBin(ArvBin* raiz);
+/* Exibe a subárvore em Em-Ordem, uma chave por linha. Aceita no igual a NULL. */
+void exibir_em_ordem(struct NO* no);
+
+/* Exibe a subárvore em Pós-Ordem, uma chave por linha. Aceita no igual a NULL. */
+void exibir_pos_ordem(struct NO* no);
 
 /* Retorna 1 quando a diferença entre alturas é no máximo um em cada nó. */
 int balanceada_ArvBin(ArvBin* raiz);

@@ -18,24 +18,22 @@
  * A busca empresta endereço e índice de página, que podem perder validade após mudanças.
  * A inserção reserva todas as páginas antes de alterar a árvore. Falhas são atômicas.
  * O programa implementa B. As variantes B+ e B* são discutidas no Markdown.
- * bool representa verdadeiro/falso e size_t representa tamanhos e índices.
- * O sufixo U indica constante sem sinal. condicao ? a : b seleciona um valor.
+ * folha usa 1 para folha e 0 para página interna. Contagens e índices usam int.
+ * condicao ? a : b seleciona a quando a condição é verdadeira, ou b quando é falsa.
  * sizeof mede o tamanho em bytes. CHAR_BIT informa a quantidade de bits por byte.
  */
 
 #include <limits.h>
-#include <stdbool.h>
-#include <stddef.h>
 #include <stdio.h>
 #include <stdlib.h>
 
 #ifndef ARVORE_B_ORDEM
-#define ARVORE_B_ORDEM 2U
+#define ARVORE_B_ORDEM 2
 #endif
-#define ARVORE_B_MAX_CHAVES (2U * ARVORE_B_ORDEM)
-#define ARVORE_B_MAX_FILHOS (ARVORE_B_MAX_CHAVES + 1U)
+#define ARVORE_B_MAX_CHAVES (2 * ARVORE_B_ORDEM)
+#define ARVORE_B_MAX_FILHOS (ARVORE_B_MAX_CHAVES + 1)
 /* Chaves int únicas limitam a altura. Uma página extra permite criar uma nova raiz. */
-#define ARVORE_B_CAPACIDADE_RESERVA (sizeof(int) * CHAR_BIT + 1U)
+#define ARVORE_B_CAPACIDADE_RESERVA (sizeof(int) * CHAR_BIT + 1)
 
 /* _Static_assert rejeita uma ordem incompatível durante a compilação. */
 _Static_assert(ARVORE_B_ORDEM >= 1 && ARVORE_B_ORDEM <= (INT_MAX - 2) / 2,
@@ -43,27 +41,25 @@ _Static_assert(ARVORE_B_ORDEM >= 1 && ARVORE_B_ORDEM <= (INT_MAX - 2) / 2,
 
 /* As posições extras guardam uma chave excedente e seu filho adicional durante a divisão. */
 typedef struct pagina_b {
-    size_t quantidade_chaves;
-    bool folha;
-    int chaves[ARVORE_B_MAX_CHAVES + 1U];
-    struct pagina_b *filhos[ARVORE_B_MAX_FILHOS + 1U];
+    int quantidade_chaves;
+    int folha;
+    int chaves[ARVORE_B_MAX_CHAVES + 1];
+    struct pagina_b *filhos[ARVORE_B_MAX_FILHOS + 1];
 } pagina_b;
 
 /* O tipo representa um endereço de página. arvore_b* aponta para a caixa da raiz. */
 typedef pagina_b *arvore_b;
 
-/* Erros têm estados próprios, permitindo que qualquer valor int seja uma chave válida. */
-typedef enum {
-    ARVORE_B_INSERIDO,
-    ARVORE_B_CHAVE_DUPLICADA,
-    ARVORE_B_SEM_MEMORIA,
-    ARVORE_B_REFERENCIA_INVALIDA
-} resultado_insercao_b;
+/* A inserção retorna 1 no sucesso, 0 para duplicata e valores negativos em caso de erro. */
+#define ARVORE_B_INSERIDO 1
+#define ARVORE_B_CHAVE_DUPLICADA 0
+#define ARVORE_B_SEM_MEMORIA (-1)
+#define ARVORE_B_REFERENCIA_INVALIDA (-2)
 
 /* A reserva possui as páginas temporárias até sua incorporação na árvore ou liberação. */
 typedef struct {
     pagina_b *paginas[ARVORE_B_CAPACIDADE_RESERVA];
-    size_t quantidade;
+    int quantidade;
 } reserva_paginas;
 
 /* Aloca apenas a caixa da raiz e cria uma árvore vazia, como nas aulas 9 e 10. */
@@ -77,29 +73,32 @@ static arvore_b *criar_arvore_b(void) {
     return arvore;
 }
 
-/* Inicializa os filhos explicitamente, sem pressupor que bytes zerados representem NULL. */
-static pagina_b *criar_pagina(bool folha) {
+/* Cria uma página vazia. folha vale 1 para folha e 0 para página interna. */
+static pagina_b *criar_pagina(int folha) {
     pagina_b *pagina = malloc(sizeof(*pagina));
     /* Informa a falha de alocação antes de acessar a página. */
     if (pagina == NULL) {
         return NULL;
     }
-    /* O literal composto {0} inicializa campos numéricos em zero e ponteiros em NULL. */
-    *pagina = (pagina_b){0};
+    pagina->quantidade_chaves = 0;
     pagina->folha = folha;
+    /* Todos os intervalos começam sem filhos, inclusive o espaço temporário de divisão. */
+    for (int indice = 0; indice <= ARVORE_B_MAX_FILHOS; indice++) {
+        pagina->filhos[indice] = NULL;
+    }
     return pagina;
 }
 
 /* A busca binária localiza a primeira chave maior ou igual à procurada ou o último intervalo. */
-static size_t localizar_posicao(const pagina_b *pagina, int chave) {
-    size_t inicio = 0U;
-    size_t fim = pagina->quantidade_chaves;
+static int localizar_posicao(const pagina_b *pagina, int chave) {
+    int inicio = 0;
+    int fim = pagina->quantidade_chaves;
     /* Cada comparação preserva o intervalo que pode conter a primeira chave procurada. */
     while (inicio < fim) {
-        const size_t meio = inicio + (fim - inicio) / 2U;
+        const int meio = inicio + (fim - inicio) / 2;
         /* Descarta chaves menores que não podem ser o limite procurado. */
         if (pagina->chaves[meio] < chave) {
-            inicio = meio + 1U;
+            inicio = meio + 1;
         } else {
             fim = meio;
         }
@@ -108,7 +107,7 @@ static size_t localizar_posicao(const pagina_b *pagina, int chave) {
 }
 
 /* A página retornada pertence à árvore. O índice opcional só é escrito em caso de sucesso. */
-static const pagina_b *buscar_arvore_b(const arvore_b *arvore, int chave, size_t *indice_chave) {
+static const pagina_b *buscar_arvore_b(const arvore_b *arvore, int chave, int *indice_chave) {
     /* Uma caixa inexistente não permite consultar o endereço da raiz. */
     if (arvore == NULL) {
         return NULL;
@@ -116,7 +115,7 @@ static const pagina_b *buscar_arvore_b(const arvore_b *arvore, int chave, size_t
     const pagina_b *pagina = *arvore;
     /* Cada página examinada seleciona uma única próxima página. */
     while (pagina != NULL) {
-        const size_t indice = localizar_posicao(pagina, chave);
+        const int indice = localizar_posicao(pagina, chave);
         /* A chave pode estar em uma página interna ou em uma folha. */
         if (indice < pagina->quantidade_chaves && pagina->chaves[indice] == chave) {
             /* Permite consultar a presença sem fornecer um destino para o índice. */
@@ -133,66 +132,66 @@ static const pagina_b *buscar_arvore_b(const arvore_b *arvore, int chave, size_t
 /* Libera apenas as páginas ainda reservadas, que não possuem filhos. */
 static void liberar_reserva(reserva_paginas *reserva) {
     /* Retira as páginas uma a uma e esvazia a reserva mesmo após uma alocação parcial. */
-    while (reserva->quantidade > 0U) {
-        free(reserva->paginas[--reserva->quantidade]);
+    while (reserva->quantidade > 0) {
+        reserva->quantidade--;
+        free(reserva->paginas[reserva->quantidade]);
     }
 }
 
-/* Reserva todas as páginas antes de alterar chaves ou ligações da árvore. */
-static bool criar_reserva(reserva_paginas *reserva, size_t quantidade) {
-    reserva->quantidade = 0U;
-    /* A altura de uma árvore válida com chaves int únicas cabe nesta capacidade. */
-    if (quantidade > ARVORE_B_CAPACIDADE_RESERVA) {
-        return false;
-    }
+/* Reserva a quantidade planejada, limitada à altura mais uma página para a nova raiz. */
+static int criar_reserva(reserva_paginas *reserva, int quantidade) {
+    reserva->quantidade = 0;
     /* Mantém as páginas já alocadas disponíveis para desfazer uma reserva incompleta. */
-    for (size_t indice = 0U; indice < quantidade; indice++) {
-        pagina_b *pagina = criar_pagina(true);
+    for (int indice = 0; indice < quantidade; indice++) {
+        pagina_b *pagina = criar_pagina(1);
         /* Uma falha na reserva deve preservar integralmente a árvore original. */
         if (pagina == NULL) {
             liberar_reserva(reserva);
-            return false;
+            return 0;
         }
-        reserva->paginas[reserva->quantidade++] = pagina;
+        reserva->paginas[reserva->quantidade] = pagina;
+        reserva->quantidade++;
     }
-    return true;
+    return 1;
 }
 
 /* O planejamento garante uma página disponível sempre que a reserva é consumida. */
-static pagina_b *obter_pagina_reservada(reserva_paginas *reserva, bool folha) {
-    pagina_b *pagina = reserva->paginas[--reserva->quantidade];
+static pagina_b *obter_pagina_reservada(reserva_paginas *reserva, int folha) {
+    reserva->quantidade--;
+    pagina_b *pagina = reserva->paginas[reserva->quantidade];
     pagina->folha = folha;
     return pagina;
 }
 
 /* Conta as páginas cheias consecutivas atingidas pela divisão iniciada na folha. */
-static bool planejar_divisoes(const pagina_b *pagina, int chave, size_t *quantidade_paginas) {
-    bool recebe_chave = true;
+static int planejar_divisoes(const pagina_b *pagina, int chave, int *quantidade_paginas) {
+    int recebe_chave = 1;
     /* Uma página interna só cresce quando o filho selecionado realmente se divide. */
     if (!pagina->folha) {
-        const size_t indice = localizar_posicao(pagina, chave);
+        const int indice = localizar_posicao(pagina, chave);
         recebe_chave = planejar_divisoes(pagina->filhos[indice], chave, quantidade_paginas);
     }
     /* Uma página com espaço absorve a chave e interrompe a propagação da divisão. */
     if (!recebe_chave || pagina->quantidade_chaves < ARVORE_B_MAX_CHAVES) {
-        return false;
+        return 0;
     }
     (*quantidade_paginas)++;
-    return true;
+    return 1;
 }
 
-/* Insere a chave e seu filho direito, preservando a posição do filho esquerdo existente. */
-static void inserir_na_pagina(pagina_b *pagina, size_t indice, int chave, pagina_b *filho_direito) {
+/* Recebe uma página sem excedente e um índice de 0 a quantidade_chaves.
+ * Insere a chave e seu filho direito, preservando o filho esquerdo existente. */
+static void inserir_na_pagina(pagina_b *pagina, int indice, int chave, pagina_b *filho_direito) {
     /* Abre espaço à direita sem sobrescrever as chaves que precisam permanecer. */
-    for (size_t posicao = pagina->quantidade_chaves; posicao > indice; posicao--) {
-        pagina->chaves[posicao] = pagina->chaves[posicao - 1U];
+    for (int posicao = pagina->quantidade_chaves; posicao > indice; posicao--) {
+        pagina->chaves[posicao] = pagina->chaves[posicao - 1];
     }
     /* O separador promovido cria um intervalo adicional para um filho. */
-    for (size_t posicao = pagina->quantidade_chaves + 1U; posicao > indice + 1U; posicao--) {
-        pagina->filhos[posicao] = pagina->filhos[posicao - 1U];
+    for (int posicao = pagina->quantidade_chaves + 1; posicao > indice + 1; posicao--) {
+        pagina->filhos[posicao] = pagina->filhos[posicao - 1];
     }
     pagina->chaves[indice] = chave;
-    pagina->filhos[indice + 1U] = filho_direito;
+    pagina->filhos[indice + 1] = filho_direito;
     pagina->quantidade_chaves++;
 }
 
@@ -202,26 +201,27 @@ static pagina_b *dividir_excedente(pagina_b *pagina, reserva_paginas *reserva, i
     *promovida = pagina->chaves[ARVORE_B_ORDEM];
     direita->quantidade_chaves = ARVORE_B_ORDEM;
     /* Transfere as chaves maiores que a mediana para a página direita. */
-    for (size_t indice = 0U; indice < ARVORE_B_ORDEM; indice++) {
-        direita->chaves[indice] = pagina->chaves[ARVORE_B_ORDEM + 1U + indice];
+    for (int indice = 0; indice < ARVORE_B_ORDEM; indice++) {
+        direita->chaves[indice] = pagina->chaves[ARVORE_B_ORDEM + 1 + indice];
     }
     /* A divisão interna também transfere os intervalos dos filhos à direita. */
     if (!pagina->folha) {
         /* Limpa as referências transferidas para que cada filho tenha uma única página
          * proprietária. */
-        for (size_t indice = 0U; indice <= ARVORE_B_ORDEM; indice++) {
-            direita->filhos[indice] = pagina->filhos[ARVORE_B_ORDEM + 1U + indice];
-            pagina->filhos[ARVORE_B_ORDEM + 1U + indice] = NULL;
+        for (int indice = 0; indice <= ARVORE_B_ORDEM; indice++) {
+            direita->filhos[indice] = pagina->filhos[ARVORE_B_ORDEM + 1 + indice];
+            pagina->filhos[ARVORE_B_ORDEM + 1 + indice] = NULL;
         }
     }
     pagina->quantidade_chaves = ARVORE_B_ORDEM;
     return direita;
 }
 
-/* O retorno não nulo indica divisão. promovida recebe a chave separadora da nova página direita. */
+/* A chave está ausente e a reserva contém todas as páginas planejadas.
+ * O retorno não nulo indica divisão. promovida recebe o separador da nova página direita. */
 static pagina_b *inserir_com_reserva(pagina_b *pagina, int chave, reserva_paginas *reserva,
                                      int *promovida) {
-    const size_t indice = localizar_posicao(pagina, chave);
+    const int indice = localizar_posicao(pagina, chave);
     /* As novas chaves entram na folha do intervalo correto. */
     if (pagina->folha) {
         inserir_na_pagina(pagina, indice, chave, NULL);
@@ -241,8 +241,9 @@ static pagina_b *inserir_com_reserva(pagina_b *pagina, int chave, reserva_pagina
     return NULL;
 }
 
-/* Insere uma chave única. Falha de alocação preserva chaves, forma e endereços existentes. */
-static resultado_insercao_b inserir_arvore_b(arvore_b *arvore, int chave) {
+/* Retorna 1 no sucesso, 0 para duplicata, -1 sem memória ou -2 para caixa inexistente.
+ * Uma falha de alocação preserva chaves, forma e endereços existentes. */
+static int inserir_arvore_b(arvore_b *arvore, int chave) {
     /* Rejeita a caixa inexistente antes de examinar seu conteúdo. */
     if (arvore == NULL) {
         return ARVORE_B_REFERENCIA_INVALIDA;
@@ -253,19 +254,19 @@ static resultado_insercao_b inserir_arvore_b(arvore_b *arvore, int chave) {
     }
     /* Uma árvore vazia precisa de sua primeira página folha. */
     if (*arvore == NULL) {
-        pagina_b *raiz = criar_pagina(true);
+        pagina_b *raiz = criar_pagina(1);
         /* Só publica a nova raiz depois que a alocação é bem-sucedida. */
         if (raiz == NULL) {
             return ARVORE_B_SEM_MEMORIA;
         }
         raiz->chaves[0] = chave;
-        raiz->quantidade_chaves = 1U;
+        raiz->quantidade_chaves = 1;
         *arvore = raiz;
         return ARVORE_B_INSERIDO;
     }
-    size_t quantidade_paginas = 0U;
-    const bool raiz_vai_dividir = planejar_divisoes(*arvore, chave, &quantidade_paginas);
-    quantidade_paginas += raiz_vai_dividir ? 1U : 0U;
+    int quantidade_paginas = 0;
+    const int raiz_vai_dividir = planejar_divisoes(*arvore, chave, &quantidade_paginas);
+    quantidade_paginas += raiz_vai_dividir ? 1 : 0;
     reserva_paginas reserva = {0};
     /* A reserva completa impede falha de memória no meio de uma sequência de divisões. */
     if (!criar_reserva(&reserva, quantidade_paginas)) {
@@ -275,9 +276,9 @@ static resultado_insercao_b inserir_arvore_b(arvore_b *arvore, int chave) {
     pagina_b *direita = inserir_com_reserva(*arvore, chave, &reserva, &promovida);
     /* Somente a divisão da raiz aumenta o número de níveis. */
     if (direita != NULL) {
-        pagina_b *nova_raiz = obter_pagina_reservada(&reserva, false);
+        pagina_b *nova_raiz = obter_pagina_reservada(&reserva, 0);
         nova_raiz->chaves[0] = promovida;
-        nova_raiz->quantidade_chaves = 1U;
+        nova_raiz->quantidade_chaves = 1;
         nova_raiz->filhos[0] = *arvore;
         nova_raiz->filhos[1] = direita;
         *arvore = nova_raiz;
@@ -287,56 +288,58 @@ static resultado_insercao_b inserir_arvore_b(arvore_b *arvore, int chave) {
 }
 
 /* Desloca chaves à esquerda para retirar uma entrada da folha ou um separador após concatenação. */
-static void remover_chave_pagina(pagina_b *pagina, size_t indice) {
+static void remover_chave_pagina(pagina_b *pagina, int indice) {
     /* As chaves posteriores fecham a posição removida e mantêm a ordem crescente. */
-    for (size_t posicao = indice + 1U; posicao < pagina->quantidade_chaves; posicao++) {
-        pagina->chaves[posicao - 1U] = pagina->chaves[posicao];
+    for (int posicao = indice + 1; posicao < pagina->quantidade_chaves; posicao++) {
+        pagina->chaves[posicao - 1] = pagina->chaves[posicao];
     }
     pagina->quantidade_chaves--;
 }
 
-/* Faz o separador descer e a maior chave do irmão esquerdo subir ao pai. */
-static void emprestar_esquerda(pagina_b *pai, size_t indice_filho) {
+/* O filho tem m-1 chaves e o irmão esquerdo tem mais de m.
+ * Faz o separador descer e a maior chave do irmão esquerdo subir ao pai. */
+static void emprestar_esquerda(pagina_b *pai, int indice_filho) {
     pagina_b *filho = pai->filhos[indice_filho];
-    pagina_b *irmao = pai->filhos[indice_filho - 1U];
+    pagina_b *irmao = pai->filhos[indice_filho - 1];
     /* O separador recebido precisa ocupar a posição anterior às chaves atuais do filho. */
-    for (size_t indice = filho->quantidade_chaves; indice > 0U; indice--) {
-        filho->chaves[indice] = filho->chaves[indice - 1U];
+    for (int indice = filho->quantidade_chaves; indice > 0; indice--) {
+        filho->chaves[indice] = filho->chaves[indice - 1];
     }
     /* O empréstimo entre páginas internas também transfere o intervalo de filho adjacente. */
     if (!filho->folha) {
         /* Abre espaço na borda esquerda para o intervalo transferido. */
-        for (size_t indice = filho->quantidade_chaves + 1U; indice > 0U; indice--) {
-            filho->filhos[indice] = filho->filhos[indice - 1U];
+        for (int indice = filho->quantidade_chaves + 1; indice > 0; indice--) {
+            filho->filhos[indice] = filho->filhos[indice - 1];
         }
         filho->filhos[0] = irmao->filhos[irmao->quantidade_chaves];
         irmao->filhos[irmao->quantidade_chaves] = NULL;
     }
-    filho->chaves[0] = pai->chaves[indice_filho - 1U];
-    pai->chaves[indice_filho - 1U] = irmao->chaves[irmao->quantidade_chaves - 1U];
+    filho->chaves[0] = pai->chaves[indice_filho - 1];
+    pai->chaves[indice_filho - 1] = irmao->chaves[irmao->quantidade_chaves - 1];
     filho->quantidade_chaves++;
     irmao->quantidade_chaves--;
 }
 
-/* Empresta a menor chave do irmão direito por meio do separador no pai. */
-static void emprestar_direita(pagina_b *pai, size_t indice_filho) {
+/* O filho tem m-1 chaves e o irmão direito tem mais de m.
+ * Empresta a menor chave do irmão direito por meio do separador no pai. */
+static void emprestar_direita(pagina_b *pai, int indice_filho) {
     pagina_b *filho = pai->filhos[indice_filho];
-    pagina_b *irmao = pai->filhos[indice_filho + 1U];
+    pagina_b *irmao = pai->filhos[indice_filho + 1];
     filho->chaves[filho->quantidade_chaves] = pai->chaves[indice_filho];
     /* O primeiro filho do irmão pertence ao intervalo após o separador que desceu. */
     if (!filho->folha) {
-        filho->filhos[filho->quantidade_chaves + 1U] = irmao->filhos[0];
+        filho->filhos[filho->quantidade_chaves + 1] = irmao->filhos[0];
     }
     pai->chaves[indice_filho] = irmao->chaves[0];
     /* Fecha a posição deixada pela menor chave emprestada. */
-    for (size_t indice = 1U; indice < irmao->quantidade_chaves; indice++) {
-        irmao->chaves[indice - 1U] = irmao->chaves[indice];
+    for (int indice = 1; indice < irmao->quantidade_chaves; indice++) {
+        irmao->chaves[indice - 1] = irmao->chaves[indice];
     }
     /* Desloca os filhos restantes e elimina a referência proprietária duplicada. */
     if (!irmao->folha) {
         /* Há um intervalo de filho a mais que a quantidade de chaves. */
-        for (size_t indice = 1U; indice <= irmao->quantidade_chaves; indice++) {
-            irmao->filhos[indice - 1U] = irmao->filhos[indice];
+        for (int indice = 1; indice <= irmao->quantidade_chaves; indice++) {
+            irmao->filhos[indice - 1] = irmao->filhos[indice];
         }
         irmao->filhos[irmao->quantidade_chaves] = NULL;
     }
@@ -345,52 +348,53 @@ static void emprestar_direita(pagina_b *pai, size_t indice_filho) {
 }
 
 /* Concatena a página com falta, um separador do pai e um irmão com ocupação mínima. */
-static void concatenar_filhos(pagina_b *pai, size_t indice_separador) {
+static void concatenar_filhos(pagina_b *pai, int indice_separador) {
     pagina_b *esquerda = pai->filhos[indice_separador];
-    pagina_b *direita = pai->filhos[indice_separador + 1U];
-    const size_t quantidade_esquerda = esquerda->quantidade_chaves;
-    const size_t quantidade_pai = pai->quantidade_chaves;
+    pagina_b *direita = pai->filhos[indice_separador + 1];
+    const int quantidade_esquerda = esquerda->quantidade_chaves;
+    const int quantidade_pai = pai->quantidade_chaves;
     esquerda->chaves[quantidade_esquerda] = pai->chaves[indice_separador];
     /* Após a retirada, a concatenação reúne (m-1)+1+m = 2m chaves. */
-    for (size_t indice = 0U; indice < direita->quantidade_chaves; indice++) {
-        esquerda->chaves[quantidade_esquerda + 1U + indice] = direita->chaves[indice];
+    for (int indice = 0; indice < direita->quantidade_chaves; indice++) {
+        esquerda->chaves[quantidade_esquerda + 1 + indice] = direita->chaves[indice];
     }
     /* A página esquerda assume os filhos transferidos. Só o recipiente direito será liberado. */
     if (!esquerda->folha) {
         /* Transfere todos os intervalos pertencentes à página direita. */
-        for (size_t indice = 0U; indice <= direita->quantidade_chaves; indice++) {
-            esquerda->filhos[quantidade_esquerda + 1U + indice] = direita->filhos[indice];
+        for (int indice = 0; indice <= direita->quantidade_chaves; indice++) {
+            esquerda->filhos[quantidade_esquerda + 1 + indice] = direita->filhos[indice];
         }
     }
-    esquerda->quantidade_chaves += direita->quantidade_chaves + 1U;
+    esquerda->quantidade_chaves += direita->quantidade_chaves + 1;
     remover_chave_pagina(pai, indice_separador);
     /* Retira do pai a referência da página direita sem perder os irmãos posteriores. */
-    for (size_t indice = indice_separador + 2U; indice <= quantidade_pai; indice++) {
-        pai->filhos[indice - 1U] = pai->filhos[indice];
+    for (int indice = indice_separador + 2; indice <= quantidade_pai; indice++) {
+        pai->filhos[indice - 1] = pai->filhos[indice];
     }
     pai->filhos[quantidade_pai] = NULL;
     free(direita);
 }
 
-/* Corrige o filho após a remoção e permite propagar a falta de ocupação ao pai. */
-static void corrigir_filho(pagina_b *pai, size_t indice_filho) {
+/* Recebe um pai interno cujo filho indicado perdeu no máximo uma chave.
+ * Corrige esse filho e permite propagar a falta de ocupação ao pai. */
+static void corrigir_filho(pagina_b *pai, int indice_filho) {
     /* Uma remoção que mantém a ocupação mínima não exige mudança estrutural. */
     if (pai->filhos[indice_filho]->quantidade_chaves >= ARVORE_B_ORDEM) {
         return;
     }
     /* Prefere o irmão esquerdo quando ele pode emprestar sem ficar abaixo do mínimo. */
-    if (indice_filho > 0U && pai->filhos[indice_filho - 1U]->quantidade_chaves > ARVORE_B_ORDEM) {
+    if (indice_filho > 0 && pai->filhos[indice_filho - 1]->quantidade_chaves > ARVORE_B_ORDEM) {
         emprestar_esquerda(pai, indice_filho);
         return;
     }
     /* Tenta o irmão direito quando a esquerda não pode emprestar. */
     if (indice_filho < pai->quantidade_chaves &&
-        pai->filhos[indice_filho + 1U]->quantidade_chaves > ARVORE_B_ORDEM) {
+        pai->filhos[indice_filho + 1]->quantidade_chaves > ARVORE_B_ORDEM) {
         emprestar_direita(pai, indice_filho);
         return;
     }
-    const size_t indice_separador =
-        indice_filho < pai->quantidade_chaves ? indice_filho : indice_filho - 1U;
+    const int indice_separador =
+        indice_filho < pai->quantidade_chaves ? indice_filho : indice_filho - 1;
     concatenar_filhos(pai, indice_separador);
 }
 
@@ -403,27 +407,28 @@ static int menor_chave_subarvore(const pagina_b *pagina) {
     return pagina->chaves[0];
 }
 
-/* A remoção não aloca memória e só altera a árvore depois de encontrar a chave. */
-static bool remover_chave(pagina_b *pagina, int chave) {
-    const size_t indice = localizar_posicao(pagina, chave);
+/* Recebe uma página não nula. A remoção não aloca memória e só altera a árvore
+ * depois de encontrar a chave. */
+static int remover_chave(pagina_b *pagina, int chave) {
+    const int indice = localizar_posicao(pagina, chave);
     /* Uma chave nesta página pode ser retirada aqui ou substituída por seu sucessor. */
     if (indice < pagina->quantidade_chaves && pagina->chaves[indice] == chave) {
         /* Uma chave de folha não possui intervalos descendentes para preservar. */
         if (pagina->folha) {
             remover_chave_pagina(pagina, indice);
-            return true;
+            return 1;
         }
-        const int sucessor = menor_chave_subarvore(pagina->filhos[indice + 1U]);
+        const int sucessor = menor_chave_subarvore(pagina->filhos[indice + 1]);
         pagina->chaves[indice] = sucessor;
-        (void)remover_chave(pagina->filhos[indice + 1U], sucessor);
-        corrigir_filho(pagina, indice + 1U);
-        return true;
+        (void)remover_chave(pagina->filhos[indice + 1], sucessor);
+        corrigir_filho(pagina, indice + 1);
+        return 1;
     }
     /* Chegar à folha sem igualdade comprova a ausência sem alterar páginas. */
     if (pagina->folha) {
-        return false;
+        return 0;
     }
-    const bool removido = remover_chave(pagina->filhos[indice], chave);
+    const int removido = remover_chave(pagina->filhos[indice], chave);
     /* Somente uma remoção bem-sucedida pode ter causado falta de ocupação. */
     if (removido) {
         corrigir_filho(pagina, indice);
@@ -432,14 +437,14 @@ static bool remover_chave(pagina_b *pagina, int chave) {
 }
 
 /* A contração elimina um nível quando a raiz perde seu último separador. */
-static bool remover_arvore_b(arvore_b *arvore, int chave) {
+static int remover_arvore_b(arvore_b *arvore, int chave) {
     /* Caixas inexistentes e árvores vazias não contêm a chave procurada. */
     if (arvore == NULL || *arvore == NULL) {
-        return false;
+        return 0;
     }
-    const bool removido = remover_chave(*arvore, chave);
+    const int removido = remover_chave(*arvore, chave);
     /* Uma raiz interna sem chaves tem um único filho, que assume a raiz. */
-    if ((*arvore)->quantidade_chaves == 0U) {
+    if ((*arvore)->quantidade_chaves == 0) {
         pagina_b *raiz_anterior = *arvore;
         *arvore = raiz_anterior->folha ? NULL : raiz_anterior->filhos[0];
         free(raiz_anterior);
@@ -454,7 +459,7 @@ static void exibir_em_ordem(const pagina_b *pagina) {
         return;
     }
     /* Cada separador é precedido pelo intervalo à sua esquerda. */
-    for (size_t indice = 0U; indice < pagina->quantidade_chaves; indice++) {
+    for (int indice = 0; indice < pagina->quantidade_chaves; indice++) {
         /* Folhas não possuem páginas filhas para percorrer. */
         if (!pagina->folha) {
             exibir_em_ordem(pagina->filhos[indice]);
@@ -476,16 +481,16 @@ static void exibir_compacta(const pagina_b *pagina) {
     }
     printf("[");
     /* Espaços separam chaves que pertencem à mesma página. */
-    for (size_t indice = 0U; indice < pagina->quantidade_chaves; indice++) {
-        printf("%s%d", indice == 0U ? "" : " ", pagina->chaves[indice]);
+    for (int indice = 0; indice < pagina->quantidade_chaves; indice++) {
+        printf("%s%d", indice == 0 ? "" : " ", pagina->chaves[indice]);
     }
     printf("]");
     /* Os parênteses listam os filhos do menor para o maior intervalo. */
     if (!pagina->folha) {
         printf("(");
         /* Uma página interna possui exatamente quantidade_chaves+1 intervalos de filhos. */
-        for (size_t indice = 0U; indice <= pagina->quantidade_chaves; indice++) {
-            printf("%s", indice == 0U ? "" : ",");
+        for (int indice = 0; indice <= pagina->quantidade_chaves; indice++) {
+            printf("%s", indice == 0 ? "" : ",");
             exibir_compacta(pagina->filhos[indice]);
         }
         printf(")");
@@ -501,23 +506,24 @@ static void exibir_paginas(const pagina_b *pagina, int profundidade) {
     /* %*s usa a largura recebida para recuar quatro espaços por nível. */
     printf("%*s[", profundidade * 4, "");
     /* Exibe as chaves entre colchetes para preservar o limite da página. */
-    for (size_t indice = 0U; indice < pagina->quantidade_chaves; indice++) {
-        printf("%s%d", indice == 0U ? "" : " ", pagina->chaves[indice]);
+    for (int indice = 0; indice < pagina->quantidade_chaves; indice++) {
+        printf("%s%d", indice == 0 ? "" : " ", pagina->chaves[indice]);
     }
     printf("]\n");
     /* Somente páginas internas possuem descendentes para exibir. */
     if (!pagina->folha) {
         /* A ordem dos filhos identifica os intervalos adjacentes de cada separador. */
-        for (size_t indice = 0U; indice <= pagina->quantidade_chaves; indice++) {
+        for (int indice = 0; indice <= pagina->quantidade_chaves; indice++) {
             exibir_paginas(pagina->filhos[indice], profundidade + 1);
         }
     }
 }
 
-/* Como as folhas estão no mesmo nível, qualquer caminho da raiz à folha mede a altura. */
-static size_t altura_arvore_b(const arvore_b *arvore) {
+/* Retorna a quantidade de níveis, ou 0 para a árvore vazia.
+ * Como as folhas estão no mesmo nível, qualquer caminho da raiz à folha mede a altura. */
+static int altura_arvore_b(const arvore_b *arvore) {
     const pagina_b *pagina = arvore == NULL ? NULL : *arvore;
-    size_t altura = 0U;
+    int altura = 0;
     /* O caminho mais à esquerda visita exatamente uma página de cada nível. */
     while (pagina != NULL) {
         altura++;
@@ -535,7 +541,7 @@ static void liberar_pagina(pagina_b *pagina) {
     /* Somente páginas internas precisam liberar descendentes. */
     if (!pagina->folha) {
         /* Cada referência ativa de filho representa uma subárvore de propriedade exclusiva. */
-        for (size_t indice = 0U; indice <= pagina->quantidade_chaves; indice++) {
+        for (int indice = 0; indice <= pagina->quantidade_chaves; indice++) {
             liberar_pagina(pagina->filhos[indice]);
         }
     }
@@ -552,42 +558,42 @@ static void liberar_arvore_b(arvore_b *arvore) {
     free(arvore);
 }
 
-/* Exibe apenas estados em que excedentes e faltas temporárias já foram corrigidos. */
+/* Recebe uma caixa válida e exibe estados com excedentes e faltas já corrigidos. */
 static void mostrar_arvore(const arvore_b *arvore) {
     printf("Estado: ");
     exibir_compacta(*arvore);
-    printf("\nAltura: %zu\nEm ordem:", altura_arvore_b(arvore));
+    printf("\nAltura: %d\nEm ordem:", altura_arvore_b(arvore));
     exibir_em_ordem(*arvore);
     printf("\n");
     exibir_paginas(*arvore, 0);
 }
 
 /* Cada exemplo começa vazio e possui suas páginas até concluir a última operação. */
-static bool executar_exemplo(const char *titulo, const int chaves[], size_t quantidade_chaves,
-                             const int remocoes[], size_t quantidade_remocoes) {
+static int executar_exemplo(const char *titulo, const int chaves[], int quantidade_chaves,
+                            const int remocoes[], int quantidade_remocoes) {
     arvore_b *arvore = criar_arvore_b();
     /* A demonstração precisa da caixa para guardar e atualizar o endereço da raiz. */
     if (arvore == NULL) {
         fputs("Não foi possível criar a caixa da raiz.\n", stderr);
-        return false;
+        return 0;
     }
     printf("\n=== %s ===\n", titulo);
     mostrar_arvore(arvore);
     /* Exibe cada etapa para permitir comparar as divisões com os estados do PDF. */
-    for (size_t indice = 0U; indice < quantidade_chaves; indice++) {
+    for (int indice = 0; indice < quantidade_chaves; indice++) {
         printf("Inserir %d\n", chaves[indice]);
         /* Libera os recursos se a demonstração não consegue alocar a próxima página. */
         if (inserir_arvore_b(arvore, chaves[indice]) != ARVORE_B_INSERIDO) {
             liberar_arvore_b(arvore);
             arvore = NULL;
             fputs("Não foi possível inserir a chave do exemplo.\n", stderr);
-            return false;
+            return 0;
         }
         mostrar_arvore(arvore);
     }
     /* Localiza uma chave presente sem transferir a propriedade da página. */
-    if (quantidade_chaves > 0U) {
-        size_t posicao_chave = 0U;
+    if (quantidade_chaves > 0) {
+        int posicao_chave = 0;
         const pagina_b *encontrada = buscar_arvore_b(arvore, chaves[0], &posicao_chave);
         printf("Buscar %d: %s\n", chaves[0], encontrada == NULL ? "ausente" : "encontrada");
         printf("Duplicata %d rejeitada: %s\n", chaves[0],
@@ -596,21 +602,21 @@ static bool executar_exemplo(const char *titulo, const int chaves[], size_t quan
     printf("Buscar -1: %s\n", buscar_arvore_b(arvore, -1, NULL) == NULL ? "ausente" : "encontrada");
     printf("Remover -1: %s\n", remover_arvore_b(arvore, -1) ? "removida" : "ausente");
     /* As remoções são cumulativas e seguem as políticas de irmãos e sucessor definidas acima. */
-    for (size_t indice = 0U; indice < quantidade_remocoes; indice++) {
+    for (int indice = 0; indice < quantidade_remocoes; indice++) {
         printf("Remover %d\n", remocoes[indice]);
         /* Os alvos existem nestes exemplos. Sua ausência indicaria um erro. */
         if (!remover_arvore_b(arvore, remocoes[indice])) {
             liberar_arvore_b(arvore);
             arvore = NULL;
             fputs("Não foi possível remover a chave do exemplo.\n", stderr);
-            return false;
+            return 0;
         }
         mostrar_arvore(arvore);
     }
     liberar_arvore_b(arvore);
     arvore = NULL;
     puts("Árvore liberada.");
-    return true;
+    return 1;
 }
 
 /* Reproduz os três exemplos principais com a convenção m=2 da aula. */
@@ -622,13 +628,13 @@ int main(void) {
     const int remocoes_animacao[] = {2, 8, 9, 5};
     const int exercicio[] = {15, 25, 47, 10, 8, 64, 53, 9, 13, 19, 14};
     const int remocoes_exercicio[] = {47, 25};
-    printf("Árvore B de ordem m=%zu: páginas não raiz têm %zu a %zu chaves.\n",
-           (size_t)ARVORE_B_ORDEM, (size_t)ARVORE_B_ORDEM, (size_t)ARVORE_B_MAX_CHAVES);
+    printf("Árvore B de ordem m=%d: páginas não raiz têm %d a %d chaves.\n", ARVORE_B_ORDEM,
+           ARVORE_B_ORDEM, ARVORE_B_MAX_CHAVES);
     /* Cada exemplo libera suas páginas antes de retornar sucesso ou falha. */
-    if (!executar_exemplo("Slides 4 a 12: visão geral", visao_geral, 10U, NULL, 0U) ||
-        !executar_exemplo("Slides 15 a 75: inserção e remoção", animacao, 10U, remocoes_animacao,
-                          4U) ||
-        !executar_exemplo("Slide 82: exercício", exercicio, 11U, remocoes_exercicio, 2U)) {
+    if (!executar_exemplo("Slides 4 a 12: visão geral", visao_geral, 10, NULL, 0) ||
+        !executar_exemplo("Slides 15 a 75: inserção e remoção", animacao, 10, remocoes_animacao,
+                          4) ||
+        !executar_exemplo("Slide 82: exercício", exercicio, 11, remocoes_exercicio, 2)) {
         return EXIT_FAILURE;
     }
     return EXIT_SUCCESS;
